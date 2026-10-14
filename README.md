@@ -28,27 +28,52 @@ utilisable sur Mac et sur iPhone (application installable, ou PWA). Les données
 Les données vivent dans `data/` : `homegestion.db` pour la base, `uploads/` pour les justificatifs et `backups/`
 pour les sauvegardes.
 
-## Déploiement sur le VPS
+## Déploiement sur le VPS (sans Docker)
 
 Il te faut :
 
-- Docker et Docker Compose sur le VPS ;
-- un nom de domaine, ou un sous-domaine, qui pointe vers l'IP du VPS ;
-- les ports 80 et 443 ouverts.
+- un VPS sous Debian ou Ubuntu ;
+- un nom de domaine, ou un sous-domaine, dont l'enregistrement DNS A pointe vers l'IP du VPS ;
+- les ports 80 et 443 libres.
 
-Le HTTPS est indispensable : sans lui, l'iPhone ne peut pas installer l'application.
+Le HTTPS est obligatoire pour installer l'application sur iPhone.
+
+1. Sur ton Mac, construis l'archive avec `./scripts/package.sh`, ou utilise celle qu'on t'a fournie. Envoie-la sur le VPS :
+   ```sh
+   scp homegestion-0.1.0.tar.gz utilisateur@ip-du-vps:
+   ```
+2. Sur le VPS (`ssh utilisateur@ip-du-vps`) :
+   ```sh
+   tar xzf homegestion-0.1.0.tar.gz
+   cd homegestion
+   sudo ./deploy/install.sh
+   ```
+   Le script demande le domaine et le mot de passe de l'application, puis il :
+   - installe Node.js 22 et Caddy ;
+   - crée le service `homegestion`, qui redémarre tout seul ;
+   - obtient le certificat HTTPS ;
+   - programme une sauvegarde quotidienne de la base, conservée 30 jours.
+
+**Mise à jour :** décompresse la nouvelle archive et relance `sudo ./deploy/install.sh`. Tes données et ta
+configuration sont conservées.
+
+**Emplacements sur le VPS :**
+
+| Élément | Chemin |
+| --- | --- |
+| Application | `/opt/homegestion` |
+| Données | `/var/lib/homegestion` (base, `uploads/`, `backups/`) |
+| Configuration | `/etc/homegestion.env` (domaine et mot de passe) |
+| Journaux | `journalctl -u homegestion -f` |
+
+Pour changer le mot de passe, modifie `/etc/homegestion.env`, puis lance `sudo systemctl restart homegestion`.
+
+### Variante avec Docker
 
 ```sh
-git clone https://github.com/ebbcent/Homegestion.git
-cd Homegestion
-cp .env.example .env
-nano .env            # renseigne DOMAIN et APP_PASSWORD
+cp .env.example .env && nano .env   # DOMAIN et APP_PASSWORD
 docker compose up -d --build
 ```
-
-Ensuite, ouvre `https://ton-domaine`.
-
-**Mise à jour :** `git pull && docker compose up -d --build`
 
 ## Installer l'application
 
@@ -57,18 +82,14 @@ Ensuite, ouvre `https://ton-domaine`.
 
 ## Sauvegarde
 
+Avec le script d'installation, la base est copiée chaque nuit dans `/var/lib/homegestion/backups/`.
+Pour emporter aussi les justificatifs :
+
 ```sh
-docker compose exec app node server/dist/backup.js              # instantané de la base dans data/backups/
-tar czf homegestion-$(date +%F).tar.gz data/backups data/uploads  # base et justificatifs
+sudo tar czf homegestion-$(date +%F).tar.gz -C /var/lib/homegestion backups uploads
 ```
 
-Pour une sauvegarde quotidienne, ajoute ceci à la crontab du VPS (`crontab -e`) :
-
-```
-30 3 * * * cd /chemin/vers/Homegestion && docker compose exec -T app node server/dist/backup.js
-```
-
-Copie ensuite `data/` ailleurs, par exemple vers pCloud avec rclone.
+Copie ensuite cette archive hors du VPS, par exemple vers pCloud avec rclone.
 
 ## Développement
 
